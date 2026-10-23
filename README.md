@@ -86,6 +86,8 @@ print(result["messages"][-1].text)
   The `description` is what the decision model reads, so write it as concrete examples.
 - `min_confidence`, `fallback_tier`, `server_side_fallbacks`
 - `decision_client` — an explicit backend instead of reading the environment.
+- `log_path` — append one JSONL line per invocation (request, decision, answer).
+  This is the input to `systemone-label` below.
 
 Or compose the pieces yourself:
 
@@ -108,6 +110,21 @@ python examples/run_agent.py      # four prompts of rising difficulty; prints ti
 pytest                            # offline: fake decision model + fake chat models
 ```
 
+## Tune the decision model on your traffic
+
+Don't fine-tune first. Log, label, measure, tune the cheap knobs, and only then
+train. `docs/TUNING.md` walks through it; the short version:
+
+```bash
+# 1. log: create_routed_agent(..., log_path="data/routing.jsonl")
+# 2. label: answer each request on every tier, judge each answer, label = cheapest passing tier
+systemone-label data/routing.jsonl --limit 200 --yes
+# 3. measure the router against those labels, then tune descriptions / min_confidence / calibration
+laya-evals run data/evals.jsonl --json reports/baseline.json
+# 4. only if that plateaus
+laya-train --data data/train.jsonl --text-column text --label-column label --base convaiinnovations/laya --out ./checkpoints/router-v1
+```
+
 ## Notes
 
 - Laya's English checkpoint reads about 512 tokens, so inputs are condensed to
@@ -127,8 +144,11 @@ src/systemone_router/
   decision.py    DecisionClient protocol + gateway / server / local backends
   routing.py     ModelTier, DEFAULT_TIERS, ComplexityRouter, RoutingDecision
   models.py      build_chat_model(tier) -> ChatAnthropic
-  middleware.py  SystemOneRoutingMiddleware (before_agent + wrap_model_call)
+  middleware.py  SystemOneRoutingMiddleware (before_agent + wrap_model_call + after_agent log)
   agent.py       create_routed_agent(...)
+  routing_log.py RoutingLogger / read_routing_log (JSONL)
+  labeling.py    systemone-label: build laya-train / laya-evals data from the log
+docs/TUNING.md   when and how to calibrate or fine-tune the decision model
 examples/run_agent.py
 tests/
 ```

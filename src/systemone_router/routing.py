@@ -70,6 +70,7 @@ class RoutingDecision:
     confidence: float = 0.0
     decided_tier: ModelTier | None = None
     error: str | None = None
+    state: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -81,6 +82,7 @@ class RoutingDecision:
             "confidence": self.confidence,
             "decided_tier": self.decided_tier.name if self.decided_tier else None,
             "error": self.error,
+            "state": self.state,
         }
 
 
@@ -152,8 +154,8 @@ class ComplexityRouter:
         try:
             decision = self.client.choose(state, self.instructions, self.criteria)
         except DecisionError as exc:
-            return RoutingDecision(tier=self.fallback_tier, reason="decision_model_error", error=str(exc))
-        return self._finalize(decision)
+            return RoutingDecision(tier=self.fallback_tier, reason="decision_model_error", error=str(exc), state=state)
+        return self._finalize(decision, state)
 
     async def aroute(self, text: str) -> RoutingDecision:
         state = condense_state(text, self.max_state_chars)
@@ -162,10 +164,10 @@ class ComplexityRouter:
         try:
             decision = await self.client.achoose(state, self.instructions, self.criteria)
         except DecisionError as exc:
-            return RoutingDecision(tier=self.fallback_tier, reason="decision_model_error", error=str(exc))
-        return self._finalize(decision)
+            return RoutingDecision(tier=self.fallback_tier, reason="decision_model_error", error=str(exc), state=state)
+        return self._finalize(decision, state)
 
-    def _finalize(self, decision: ChoiceDecision) -> RoutingDecision:
+    def _finalize(self, decision: ChoiceDecision, state: str) -> RoutingDecision:
         decided = self._by_name[decision.choice]
         index = self.tiers.index(decided)
         if decision.confidence < self.min_confidence and index < len(self.tiers) - 1:
@@ -175,6 +177,7 @@ class ComplexityRouter:
                 probabilities=decision.probabilities,
                 confidence=decision.confidence,
                 decided_tier=decided,
+                state=state,
             )
         return RoutingDecision(
             tier=decided,
@@ -182,4 +185,5 @@ class ComplexityRouter:
             probabilities=decision.probabilities,
             confidence=decision.confidence,
             decided_tier=decided,
+            state=state,
         )

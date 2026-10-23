@@ -16,6 +16,7 @@ from .decision import DecisionClient, decision_client_from_env
 from .middleware import SystemOneRoutingMiddleware
 from .models import build_chat_model
 from .routing import DEFAULT_TIERS, ComplexityRouter, ModelTier
+from .routing_log import RoutingLogger
 
 
 def create_routed_agent(
@@ -28,6 +29,7 @@ def create_routed_agent(
     fallback_tier: str | None = None,
     server_side_fallbacks: bool = True,
     model_factory: Callable[[ModelTier], BaseChatModel] | None = None,
+    log_path: str | None = None,
     middleware: Sequence[AgentMiddleware] = (),
     **create_agent_kwargs: Any,
 ):
@@ -45,6 +47,9 @@ def create_routed_agent(
         server_side_fallbacks: Enable Claude's server-side refusal fallback on
             the models that support it.
         model_factory: Override how tiers become chat models.
+        log_path: Append one JSONL line per invocation (request, decision,
+            answer) here. Feed it to ``systemone-label`` to build training and
+            eval data for the decision model.
         middleware: Extra middleware, run after the routing middleware.
         **create_agent_kwargs: Passed through to ``create_agent`` (checkpointer,
             response_format, state_schema, ...).
@@ -52,7 +57,8 @@ def create_routed_agent(
     client = decision_client or decision_client_from_env()
     router = ComplexityRouter(client, tiers, min_confidence=min_confidence, fallback_tier=fallback_tier)
     factory = model_factory or partial(build_chat_model, server_side_fallbacks=server_side_fallbacks)
-    routing = SystemOneRoutingMiddleware(router, model_factory=factory)
+    log = RoutingLogger(log_path) if log_path else None
+    routing = SystemOneRoutingMiddleware(router, model_factory=factory, log=log)
     # The base model only matters if routing is somehow absent from state; use
     # the fallback tier so that path is still the safe one.
     base_model = routing.model_for(router.fallback_tier)

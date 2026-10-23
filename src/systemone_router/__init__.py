@@ -13,6 +13,7 @@ from .decision import (
 from .middleware import ROUTING_STATE_KEY, RoutedAgentState, SystemOneRoutingMiddleware
 from .models import build_chat_model
 from .routing import DEFAULT_TIERS, ComplexityRouter, ModelTier, RoutingDecision
+from .routing_log import RoutingLogger, read_routing_log
 
 __all__ = [
     "DEFAULT_TIERS",
@@ -25,10 +26,12 @@ __all__ = [
     "ModelTier",
     "RoutedAgentState",
     "RoutingDecision",
+    "RoutingLogger",
     "SystemOneRoutingMiddleware",
     "SystemOneServerClient",
     "VercelGatewayDecisionClient",
     "build_chat_model",
     "create_routed_agent",
     "decision_client_from_env",
+    "read_routing_log",
 ]

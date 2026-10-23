@@ -43,6 +43,7 @@ def main() -> None:
     agent = create_routed_agent(
         tools=[current_time, word_count],
         system_prompt="You are a concise, helpful assistant.",
+        log_path="data/routing.jsonl",
     )
     for prompt in PROMPTS:
         result = agent.invoke({"messages": [HumanMessage(prompt)]})

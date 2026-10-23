@@ -14,6 +14,7 @@ from typing_extensions import NotRequired
 
 from .models import build_chat_model
 from .routing import ComplexityRouter, ModelTier, RoutingDecision
+from .routing_log import RoutingLogger
 
 ROUTING_STATE_KEY = "routing"
 
@@ -47,6 +48,8 @@ class SystemOneRoutingMiddleware(AgentMiddleware[RoutedAgentState, Any]):
             :func:`build_chat_model`; tests inject fakes here.
         text_for_routing: Extracts the text the decision model should read
             from the agent state. Defaults to the latest human message.
+        log: Optional :class:`RoutingLogger`. When set, every invocation
+            appends one line with the request, the decision, and the answer.
     """
 
     state_schema = RoutedAgentState
@@ -57,9 +60,11 @@ class SystemOneRoutingMiddleware(AgentMiddleware[RoutedAgentState, Any]):
         *,
         model_factory: Callable[[ModelTier], BaseChatModel] = build_chat_model,
         text_for_routing: Callable[[RoutedAgentState], str] | None = None,
+        log: RoutingLogger | None = None,
     ) -> None:
         super().__init__()
         self.router = router
+        self.log = log
         self._model_factory = model_factory
         self._text_for_routing = text_for_routing or (lambda state: latest_human_text(state["messages"]))
         self._models: dict[str, BaseChatModel] = {}
@@ -85,6 +90,28 @@ class SystemOneRoutingMiddleware(AgentMiddleware[RoutedAgentState, Any]):
     async def abefore_agent(self, state: RoutedAgentState, runtime: Runtime[Any]) -> dict[str, Any] | None:
         decision = await self.router.aroute(self._text_for_routing(state))
         return {ROUTING_STATE_KEY: decision.to_dict()}
+
+    def after_agent(self, state: RoutedAgentState, runtime: Runtime[Any]) -> dict[str, Any] | None:
+        self._log(state)
+        return None
+
+    async def aafter_agent(self, state: RoutedAgentState, runtime: Runtime[Any]) -> dict[str, Any] | None:
+        self._log(state)
+        return None
+
+    def _log(self, state: RoutedAgentState) -> None:
+        if self.log is None:
+            return
+        routing = dict(state.get(ROUTING_STATE_KEY) or {})
+        messages = state.get("messages") or []
+        self.log.record(
+            {
+                "text": routing.pop("state", "") or latest_human_text(messages),
+                "routing": routing,
+                "answer": messages[-1].text if messages else "",
+                "message_count": len(messages),
+            }
+        )
 
     def wrap_model_call(
         self,
